@@ -39,7 +39,7 @@ class ControlActor(dataProducer: ActorRef) extends Actor with ActorLogging {
       val (maybeData, newBuffer) = buffer.poll
       maybeData.foreach{s =>
         println(s"received rate: $s" )
-        val rate = s.toInt * 10
+        val rate = s.toInt * 50
 
         dataProducer ! DataProducer.MessagesPerSecond(rate)
       }

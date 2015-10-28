@@ -1,6 +1,7 @@
 package com.gm.kafka
 
 import java.util.HashMap
+import scala.util.Random
 import akka.actor.{ActorLogging, Actor}
 import scala.concurrent.duration._
 import org.apache.kafka.clients.producer.{ProducerConfig, KafkaProducer, ProducerRecord}
@@ -24,21 +25,31 @@ class DataProducer(brokers: String, topic:String) extends Actor with ActorLoggin
 
   var counter = 0L
 
-  val tempFunc: Long => Double = l => 20 + 10 * Math.cos(l) + scala.util.Random.nextGaussian()*10-5
-  val humFunc:  Long => Double = l => 50 + 20 * Math.sin(l) + scala.util.Random.nextGaussian()*5-5
+  val tempFunc: Long => Double = l => 20 + 10 * Math.cos(l) + Random.nextGaussian()*10-5
+  val humFunc:  Long => Double = l => 50 + 20 * Math.sin(l) + Random.nextGaussian()*5-5
+  val presFunc:  Long => Double = l => 1000 + humFunc(l)/25 - tempFunc(l)/10 + Random.nextGaussian()*5-5
+
+  val metrics = Map("temperature" -> tempFunc, "humidity"-> humFunc, "pressure" -> presFunc)
 
   import context.dispatcher
   val tick =  context.system.scheduler.schedule(1000 millis , 1000 millis, self, Run)
 
   override def postStop() = tick.cancel()
 
+  def mkMessage(typ: String): Long => String = l => {
+    val func = metrics(typ)
+    val str = s"$typ, ${System.currentTimeMillis()}, ${func(l)}"
+    str
+  }
+
   def receive = {
     case Run =>
       val t0 = System.nanoTime
       (1 to msgsPerSec.value).foreach { messageNum =>
-        val str = s"${tempFunc(counter)}, ${humFunc(counter)}"
-        val message = new ProducerRecord[String, String](topic, null, str)
-        producer.send(message)
+
+        val msgs = metrics.map{case (metric, func) => s"$metric, ${System.currentTimeMillis()}, ${func(counter)}"}
+        counter = counter + 1
+        msgs.foreach {msg => producer.send(new ProducerRecord[String, String](topic, null, msg))}
       }
       val t1 = System.nanoTime
       val restTime = Math.max(0,1000-(t1-t0)/1000000)
